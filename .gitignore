@@ -1,0 +1,4 @@
+*.cif
+*.tsv
+*.pdb
+.venv/
