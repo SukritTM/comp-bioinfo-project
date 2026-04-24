@@ -1,5 +1,5 @@
 """
-struct_conf_centroids.py
+struct-centroids.py
 ------------------------
 Reads an mmCIF file, parses the _struct_conf secondary-structure
 table and _atom_site coordinates, then computes the mean (x, y, z)
@@ -15,6 +15,7 @@ import sys
 import argparse
 import gemmi
 import pandas as pd
+from time import perf_counter as pf
 
  
 def parse_args():
@@ -141,6 +142,7 @@ def compute_centroids(sc_df, atom_df):
  
  
 def main():
+    timer = pf()
     args = parse_args()
  
     # Resolve atom filter
@@ -175,6 +177,9 @@ def main():
     pd.set_option("display.width", 120)
     pd.set_option("display.float_format", "{:.3f}".format)
     print("\n" + result_df.to_string(index=False))
+
+    timer = pf() - timer
+    print(f'time: {timer:2f}')
  
  
 if __name__ == "__main__":
