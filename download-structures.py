@@ -5,8 +5,15 @@ from datasets import load_dataset
 from tqdm import tqdm
 
 from time import perf_counter as pf
+from argparse import ArgumentParser
 
-ds = load_dataset("tattabio/euk_retrieval")
+parser = ArgumentParser()
+parser.add_argument('-d', '--dataset', default='tattabio/euk_retrieval', help='Huggingface Dataset name')
+parser.add_argument('-o', '--output_dir', default='data\\euk_retrieval\\structures\\', help='Output directory')
+args = parser.parse_args()
+
+
+ds = load_dataset(args.dataset)
 
 train = ds['train'].to_pandas()
 test = ds['test'].to_pandas()
@@ -31,14 +38,14 @@ for i, uniprot_id in enumerate(tqdm(train['Entry'])):
         else:
             canonical_file = pred[0]
 
-        adb.download_cif_for(canonical_file, 'euk_retrieval\\data\\structures\\')
+        adb.download_cif_for(canonical_file, args.output_dir)
     except:
         pred = []
         no_results.append(uniprot_id)
     # print(i, len(pred))
 
 
-
+print('Testing subset')
 for i, uniprot_id in enumerate(tqdm(test['Entry'])):
     # print(uniprot_id, flush=True)
     try:
@@ -52,7 +59,7 @@ for i, uniprot_id in enumerate(tqdm(test['Entry'])):
         else:
             canonical_file = pred[0]
 
-        adb.download_cif_for(canonical_file, 'euk_retrieval\\data\\structures\\')
+        adb.download_cif_for(canonical_file, args.output_dir)
     except:
         pred = []
         no_results.append(uniprot_id)
