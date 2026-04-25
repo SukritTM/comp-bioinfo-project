@@ -31,7 +31,7 @@ for i, uniprot_id in enumerate(tqdm(train['Entry'])):
         else:
             canonical_file = pred[0]
 
-        adb.download_cif_for(canonical_file, 'data\\structures\\')
+        adb.download_cif_for(canonical_file, 'euk_retrieval\\data\\structures\\')
     except:
         pred = []
         no_results.append(uniprot_id)
@@ -52,7 +52,7 @@ for i, uniprot_id in enumerate(tqdm(test['Entry'])):
         else:
             canonical_file = pred[0]
 
-        adb.download_cif_for(canonical_file, 'data\\structures\\')
+        adb.download_cif_for(canonical_file, 'euk_retrieval\\data\\structures\\')
     except:
         pred = []
         no_results.append(uniprot_id)
