@@ -25,7 +25,7 @@ def parse_args():
     )
     p.add_argument("cif_dir", help="Path to folder containing mmCIF / PDBx files")
     p.add_argument(
-        "-o", "--output_dir", default="data/secondary_centroids",
+        "-o", "--output_dir", default="data//euk_retrieval//secondary_centroids",
         help="Output directory for CSV files (default: data/secondary_centroids)"
     )
     p.add_argument(
