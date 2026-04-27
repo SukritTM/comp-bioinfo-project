@@ -30,10 +30,9 @@ httpcore==1.0.9
 httpx==0.28.1
 huggingface_hub==1.10.2
 idna==3.11
-ipykernel==7.2.0
-ipython==9.12.0
-ipython_pygments_lexers==1.1.1
-jedi==0.19.2
+ipykernel
+ipython
+ipython_pygments_lexers
 joblib==1.5.3
 jupyter_client==8.8.0
 jupyter_core==5.9.1
