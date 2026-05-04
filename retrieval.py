@@ -1,23 +1,33 @@
 """
 retrieval.py
 ------------
-Loads *_centroids.csv files (from AlphaFold structures downloaded for DGEB),
-builds pairwise-distance tensors on the fly, runs FAISS cosine-similarity
-retrieval, and evaluates against DGEB ground-truth labels.
+Loads protein structure data, runs FAISS cosine-similarity retrieval,
+and evaluates against DGEB ground-truth labels.
 
-Protein IDs are extracted from AlphaFold filenames:
+Two input modes:
+  --centroids DIR          Directory of *_centroids.csv files (one per protein).
+                           Builds pairwise-distance tensors on the fly.
+  --secondary_structures DIR
+                           Directory containing two CSVs:
+                             train_secondary_structure_frequencies.csv
+                             test_secondary_structure_frequencies.csv
+                           Each CSV has columns for secondary structure type counts
+                           (BEND, HELX_*, STRN, TURN_*) and an 'Entry' column.
+                           Train = corpus, test = queries.
+
+Protein IDs are extracted from AlphaFold filenames (centroids mode):
     AF-{UNIPROT_ID}-F1-model_v6_centroids.csv  ->  UNIPROT_ID
 
 Usage
 -----
+    # Centroids mode with pre-saved labels:
+    python retrieval.py --centroids data/secondary_centroids --labels dgeb_euk_labels.json
+
+    # Secondary structure frequencies mode:
+    python retrieval.py --secondary_structures data/secondary_structures --dgeb
+
     # Test pipeline with synthetic labels:
     python retrieval.py --centroids data/secondary_centroids --demo
-
-    # Pull DGEB labels directly from HuggingFace and run:
-    python retrieval.py --centroids data/secondary_centroids --dgeb
-
-    # Run with a pre-saved labels JSON:
-    python retrieval.py --centroids data/secondary_centroids --labels dgeb_euk_labels.json
 
 Output (written to results/)
 ------------------------------
@@ -147,6 +157,74 @@ def csv_to_vector(csv_path: Path, max_elements: int) -> tuple[np.ndarray, dict]:
     ])
 
     return vector, meta
+
+
+# ---------------------------------------------------------------------------
+# Secondary structure frequencies → vectors
+# ---------------------------------------------------------------------------
+
+# Canonical column order (union of train + test columns, alphabetically sorted)
+FREQ_COLS = [
+    "BEND",
+    "HELX_LH_PP_P",
+    "HELX_RH_3T_P",
+    "HELX_RH_AL_P",
+    "HELX_RH_PI_P",
+    "STRN",
+    "TURN_TY1_P",
+]
+
+
+def load_secondary_structure_csvs(ss_dir: Path, logger) -> tuple[np.ndarray, list, list]:
+    """
+    Load train and test secondary structure frequency CSVs from ss_dir.
+
+    Expects:
+        ss_dir/train_secondary_structure_frequencies.csv
+        ss_dir/test_secondary_structure_frequencies.csv
+
+    Returns
+    -------
+    vecs        : np.float32 (N_train + N_test, len(FREQ_COLS))
+    protein_ids : list of UniProt Entry IDs (train first, then test)
+    all_meta    : list of dicts with protein_id and split info
+    """
+    train_path = ss_dir / "train_secondary_structure_frequencies.csv"
+    test_path  = ss_dir / "test_secondary_structure_frequencies.csv"
+
+    for p in (train_path, test_path):
+        if not p.exists():
+            logger.error(f"Expected file not found: {p}")
+            sys.exit(1)
+
+    train_df = pd.read_csv(train_path)
+    test_df  = pd.read_csv(test_path)
+
+    logger.info(f"Loaded train CSV: {len(train_df)} proteins")
+    logger.info(f"Loaded test  CSV: {len(test_df)} proteins")
+
+    vectors, protein_ids, all_meta = [], [], []
+
+    for split_name, df in [("train", train_df), ("test", test_df)]:
+        for _, row in df.iterrows():
+            entry = str(row["Entry"]).strip()
+            vec = np.array(
+                [float(row.get(col, 0.0)) for col in FREQ_COLS],
+                dtype=np.float32
+            )
+            total = vec.sum()
+            if total > 0:
+                vec = vec / total
+            vectors.append(vec)
+            protein_ids.append(entry)
+            all_meta.append({
+                "protein_id": entry,
+                "split":      split_name,
+            })
+
+    vecs = np.stack(vectors, axis=0).astype(np.float32)
+    logger.info(f"Vector matrix shape: {vecs.shape}  (dim = {len(FREQ_COLS)} freq features)")
+    return vecs, protein_ids, all_meta
 
 
 def load_all_csvs(centroids_dir: Path, max_elements: int, logger) -> tuple[np.ndarray, list, list]:
@@ -448,8 +526,11 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Structure-based protein retrieval using FAISS cosine similarity."
     )
-    p.add_argument("--centroids",    required=True,
+    input_group = p.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--centroids",
                    help="Directory containing *_centroids.csv files")
+    input_group.add_argument("--secondary_structures",
+                   help="Directory containing train/test secondary structure frequency CSVs")
     p.add_argument("--labels",       default=None,
                    help="Path to pre-saved DGEB ground-truth JSON")
     p.add_argument("--dgeb",         action="store_true",
@@ -477,15 +558,23 @@ def main():
     logger.info("=" * 60)
     logger.info("Structure-based Protein Retrieval (FAISS)")
     logger.info("=" * 60)
-    logger.info(f"Centroids dir : {args.centroids}")
-    logger.info(f"Max elements  : {args.max_elements}")
     logger.info(f"k values      : {k_values}")
     logger.info(f"Primary metric: map@5 (DGEB standard)")
 
-    # 1. Load CSVs → vectors (on the fly, no intermediate files)
-    vecs, protein_ids, all_meta = load_all_csvs(
-        Path(args.centroids), args.max_elements, logger
-    )
+    # 1. Load vectors
+    if args.secondary_structures:
+        logger.info(f"Input mode    : secondary structure frequencies")
+        logger.info(f"SS dir        : {args.secondary_structures}")
+        vecs, protein_ids, all_meta = load_secondary_structure_csvs(
+            Path(args.secondary_structures), logger
+        )
+    else:
+        logger.info(f"Input mode    : centroids")
+        logger.info(f"Centroids dir : {args.centroids}")
+        logger.info(f"Max elements  : {args.max_elements}")
+        vecs, protein_ids, all_meta = load_all_csvs(
+            Path(args.centroids), args.max_elements, logger
+        )
 
     # 2. Build FAISS index
     index, vecs_norm = build_faiss_index(vecs, logger)
@@ -526,7 +615,8 @@ def main():
     manifest_path = output_dir / "run_manifest.jsonl"
     manifest_entry = {
         "timestamp":    datetime.datetime.now().isoformat(timespec="seconds"),
-        "max_elements": args.max_elements,
+        "input_mode":   "secondary_structures" if args.secondary_structures else "centroids",
+        "max_elements": args.max_elements if args.centroids else None,
         "labels_source": "demo" if args.demo else ("dgeb_hf" if args.dgeb else args.labels),
         "n_proteins":   len(protein_ids),
         "n_queries":    summary["n_queries"],
@@ -558,4 +648,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()
